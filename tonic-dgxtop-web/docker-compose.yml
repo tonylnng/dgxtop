@@ -1,0 +1,87 @@
+# tonic-dgxtop-web
+#
+# Three services, all containerized:
+#   - db       TimescaleDB (Postgres 16) — internal only, named volume
+#   - exporter Python + pynvml + FastAPI — internal only, needs NVIDIA runtime
+#   - webui    Nginx (Basic Auth) + React build — bound to Tailscale IP only
+#
+# See .env.example for required variables.
+
+x-restart: &restart
+  restart: unless-stopped
+
+networks:
+  dgx:
+    driver: bridge
+
+volumes:
+  dgx-tsdb-data: {}
+
+services:
+  db:
+    <<: *restart
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: dgx-db
+    environment:
+      POSTGRES_DB: dgxtop
+      POSTGRES_USER: dgx
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - dgx-tsdb-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    networks: [dgx]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dgx -d dgxtop"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  exporter:
+    <<: *restart
+    build: ./exporter
+    image: dgxtop-exporter:latest
+    container_name: dgx-exporter
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_DSN: postgresql://dgx:${POSTGRES_PASSWORD}@db:5432/dgxtop
+      POLL_INTERVAL_SEC: "1.0"
+      ENABLE_GPU: "true"
+      LOG_LEVEL: "info"
+    # GPU passthrough via NVIDIA Container Toolkit
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility, compute]
+    # Host visibility for per-process host metrics
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    networks: [dgx]
+
+  webui:
+    <<: *restart
+    build: ./webui
+    image: dgxtop-webui:latest
+    container_name: dgx-webui
+    depends_on: [exporter]
+    environment:
+      EXPORTER_HOST: exporter
+      EXPORTER_PORT: "9400"
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER}
+      BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD}
+    # Bind only to the Tailscale interface — never to 0.0.0.0.
+    ports:
+      - "${TAILSCALE_IP}:8080:80"
+    networks: [dgx]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

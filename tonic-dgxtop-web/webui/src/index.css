@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+html, body, #root { height: 100%; }
+body { background: radial-gradient(1200px 800px at 20% -10%, #172247 0%, #0b1020 60%); }
+
+.panel { @apply bg-panel border border-line rounded-2xl p-4 shadow-lg shadow-black/20; }
+.panel-title { @apply text-xs uppercase tracking-widest text-muted mb-2; }
+.stat-value { @apply text-2xl font-semibold text-slate-100; }
+.pill { @apply text-xs px-2 py-0.5 rounded-full border border-line bg-panel2; }
