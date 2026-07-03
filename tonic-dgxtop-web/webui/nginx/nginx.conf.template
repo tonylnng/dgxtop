@@ -1,0 +1,47 @@
+# Rendered into /etc/nginx/conf.d/dgxtop.conf by the base image's envsubst step.
+# Variables consumed: EXPORTER_HOST, EXPORTER_PORT
+
+server {
+    listen 80 default_server;
+    server_name _;
+
+    # Static React build
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Basic auth guards everything (htpasswd generated at container start).
+    auth_basic           "dgxtop";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+
+    # SPA fallback
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # REST API → exporter
+    location /api/ {
+        proxy_pass http://${EXPORTER_HOST}:${EXPORTER_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 30s;
+    }
+
+    # WebSocket → exporter
+    location /ws {
+        proxy_pass http://${EXPORTER_HOST}:${EXPORTER_PORT}/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Health (no auth so docker healthcheck works)
+    location = /healthz {
+        auth_basic off;
+        return 200 "ok\n";
+        add_header Content-Type text/plain;
+    }
+}

@@ -1,0 +1,17 @@
+# Local secrets
+.env
+*.env.local
+
+# Node
+webui/node_modules/
+webui/dist/
+webui/.vite/
+
+# Python
+exporter/__pycache__/
+exporter/**/__pycache__/
+exporter/*.egg-info/
+exporter/.venv/
+
+# Docker
+*.log
